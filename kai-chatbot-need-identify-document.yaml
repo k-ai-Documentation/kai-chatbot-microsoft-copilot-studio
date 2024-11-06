@@ -1,0 +1,232 @@
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    triggerQueries:
+      - your trigger word list 
+      - your trigger word list
+
+  actions:
+    - kind: SetVariable
+      id: setVariable_iNJfrn
+      variable: Topic.apiKey
+      value: your api key like 9087VBNBFIOIIUIY3Eftj+IFEBZUIVIE987=
+
+    - kind: SetVariable
+      id: setVariable_DoE36i
+      variable: Topic.instanceId
+      value: your instance id like vov987-p909-nvje98-vfqv-908bn987kjhg
+      
+    - kind: SetVariable
+      id: setVariable_ATGC3W
+      variable: Topic.multiDocuments
+      value: true
+
+    - kind: SetVariable
+      id: setVariable_gOtsgD
+      variable: Topic.needFollowingQuestions
+      value: true
+
+    - kind: Question
+      id: question_zlOE0k
+      interruptionPolicy:
+        allowInterruption: true
+
+      variable: init:Topic.userQuestion
+      prompt: Hi, you can ask me a question
+      entity: StringPrebuiltEntity
+
+    - kind: SetVariable
+      id: setVariable_chatHistory
+      variable: Topic.chatHistory
+      value: "=Table({from:\"user\", message: Topic.userQuestion})"
+
+    - kind: HttpRequestAction
+      id: kDwhxv
+      method: Post
+      url: https://api.kai-studio.ai/api/search/identify-specific-document
+      headers:
+        api-key: =Topic.apiKey
+        instance-id: =Topic.instanceId
+
+      body:
+        kind: JsonRequestContent
+        content: |-
+          ={
+              conversation: Topic.chatHistory
+          }
+
+      response: Topic.identifyDocumentResult
+      responseSchema:
+        kind: Record
+        properties:
+          response:
+            type:
+              kind: Record
+              properties:
+                isFinal: Boolean
+                question: String
+
+    - kind: ConditionGroup
+      id: conditionGroup_2aS4v8
+      conditions:
+        - id: conditionItem_6whurD
+          condition: =Topic.identifyDocumentResult.response.isFinal = true
+          actions:
+            - kind: SendActivity
+              id: sendActivity_2Ct7ku
+              activity: |-
+                Correct Question found : 
+                
+                {Topic.identifyDocumentResult.response.question}
+                
+                Searching for an answer...
+
+        - id: conditionItem_OCPiBG
+          condition: =Topic.identifyDocumentResult.response.isFinal = false
+          actions:
+            - kind: SetVariable
+              id: setVariable_oxTrqk
+              variable: Topic.chatHistory
+              value: "=Table(Topic.chatHistory, {from: \"assistance\", message: Topic.identifyDocumentResult.response.question})"
+
+            - kind: Question
+              id: question_npWiSN
+              interruptionPolicy:
+                allowInterruption: true
+
+              variable: init:Topic.newUserQuestion
+              prompt: "{Topic.identifyDocumentResult.response.question}"
+              entity: StringPrebuiltEntity
+
+            - kind: SetVariable
+              id: setVariable_fA7BMP
+              variable: Topic.chatHistory
+              value: "=Table(Topic.chatHistory, {from: \"user\", message: Topic.newUserQuestion})"
+
+            - kind: GotoAction
+              id: j6sWKZ
+              actionId: kDwhxv
+
+      elseActions:
+        - kind: EndConversation
+          id: ea5QFX
+
+    - kind: HttpRequestAction
+      id: YyHYFp
+      method: Post
+      url: https://api.kai-studio.ai/api/search/query
+      headers:
+        api-key: =Topic.apiKey
+        instance-id: =Topic.instanceId
+
+      body:
+        kind: JsonRequestContent
+        content: |-
+          ={
+              query: Topic.identifyDocumentResult.response.question,
+              user:"userid",
+              impersonate: "",
+              multiDocuments: Topic.multiDocuments,
+              needFollowingQuestions: Topic.needFollowingQuestions
+          }
+
+      response: Topic.finalAnswer
+      responseSchema:
+        kind: Record
+        properties:
+          response:
+            type:
+              kind: Record
+              properties:
+                answer: String
+                confidentRate: Number
+                documents:
+                  type:
+                    kind: Table
+                    properties:
+                      id: String
+                      name: String
+                      url: String
+
+                followingQuestions:
+                  type:
+                    kind: Table
+                    properties:
+                      Value: String
+
+                gotAnswer: Boolean
+                query: String
+                reason: String
+
+    - kind: ConditionGroup
+      id: conditionGroup_LbnaRm
+      conditions:
+        - id: conditionItem_LJV12R
+          condition: =!IsBlank(Topic.finalAnswer.response.answer)
+          actions:
+            - kind: SendActivity
+              id: sendActivity_shEFcz
+              activity: "Answer : {Topic.finalAnswer.response.answer}"
+
+            - kind: SendActivity
+              id: sendActivity_xe3uiZ
+              activity: |-
+                Documents:
+                {Concat(Topic.finalAnswer.response.documents, "- " & Text(name) & ": " & Text(url) & Char(10))}
+
+            - kind: ConditionGroup
+              id: conditionGroup_BnWe6F
+              conditions:
+                - id: conditionItem_09RbEO
+                  condition: =Topic.needFollowingQuestions = true
+                  actions:
+                    - kind: SendActivity
+                      id: sendActivity_kZHo8S
+                      activity: |-
+                        Following Questions:
+                        {Concat(Topic.finalAnswer.response.followingQuestions, "- " & Text(Value) & Char(10))}
+
+      elseActions:
+        - kind: SendActivity
+          id: sendActivity_By6s0a
+          activity: Sorry, I can not find an answer in your documents.
+
+    - kind: Question
+      id: question_UdY0xj
+      interruptionPolicy:
+        allowInterruption: true
+
+      variable: init:Topic.needMoreQuestion
+      prompt: Do you have any other quesion ?
+      entity:
+        kind: EmbeddedEntity
+        definition:
+          kind: ClosedListEntity
+          items:
+            - id: Yes
+              displayName: Yes
+
+            - id: No
+              displayName: No
+
+    - kind: ConditionGroup
+      id: conditionGroup_Xz3lXF
+      conditions:
+        - id: conditionItem_Aq3hNG
+          condition: =Topic.needMoreQuestion = 'cr98a_kaiChatbotNeedIdentifyDocument.topic.chatbot-kai-search.main.question_UdY0xj'.Yes
+          actions:
+            - kind: GotoAction
+              id: NYyz1O
+              actionId: question_zlOE0k
+
+        - id: conditionItem_gYzlNh
+          condition: =Topic.needMoreQuestion = 'cr98a_kaiChatbotNeedIdentifyDocument.topic.chatbot-kai-search.main.question_UdY0xj'.No
+          actions:
+            - kind: EndConversation
+              id: X2se7e
+
+      elseActions:
+        - kind: EndConversation
+          id: HV6LQc
